@@ -139,7 +139,9 @@ export class World {
 
   clampPlayer(p) {
     const m = 16;
-    p.x = Math.max(m, Math.min(WORLD_W * TILE - m, p.x));
+    // Keep the player on the beach/land: no walking into the deep sea.
+    const seaEdge = this.city.seaLeft - 20;
+    p.x = Math.max(m, Math.min(seaEdge, p.x));
     p.y = Math.max(m, Math.min(WORLD_H * TILE - m, p.y));
   }
 
@@ -220,6 +222,12 @@ export class World {
         else car.y = b.y + b.h + 8;
         car.speed *= 0.4;
       }
+    }
+    // Keep cars out of the deep sea (the beach is the east boundary).
+    const seaEdge = this.city.seaLeft - 22;
+    if (car.x > seaEdge) {
+      car.x = seaEdge;
+      car.speed = Math.min(car.speed, 0);
     }
   }
 
