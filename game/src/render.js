@@ -1,141 +1,216 @@
-// Drawing only: the world's state and the current screen in, pixels out. The 1280x720 playfield
-// is scaled to fit the window and centred, the margin filled with the backdrop colour. Flat
-// rectangles and circles, canvas text for the HUD and the panels. Text that holds a number is
-// rebuilt only when the number changes, so a frame allocates nothing.
-import { FIELD, FONT, LIVES, PALETTE } from './config.js';
-import { KIND_COIN } from './world.js';
+// render.js - draws the Leonida world to the canvas each frame: the road grid,
+// buildings, park and beach, the sea, cars, pedestrians, cops, the player and
+// particles, all under a camera that follows the player. Also applies the
+// day/night tint and headlight glow at night.
 
-export const SCREEN_TITLE = 'title';
-export const SCREEN_PLAY = 'play';
-export const SCREEN_PAUSED = 'paused';
-export const SCREEN_OVER = 'over';
+import { TILE, WORLD_W, WORLD_H, BEACH_W, CAR_LENGTH, CAR_WIDTH } from './config.js';
 
-/** The panel's width; its height grows with its lines: room for the title, the lines and the prompt. */
-const PANEL = { width: 600, top: 134, line: 34, bottom: 70 };
-const LIFE_SIZE = 20;
-const LIFE_GAP = 8;
-
-function cachedLabel(prefix) {
-  let value = -1;
-  let text = '';
-  return function label(next) {
-    if (next !== value) {
-      value = next;
-      text = prefix + next;
-    }
-    return text;
-  };
-}
-
-export function createRenderer(canvas) {
-  const context = canvas.getContext('2d');
-  const view = { scale: 1, x: 0, y: 0 };
-  const scoreLabel = cachedLabel('Score ');
-  const levelLabel = cachedLabel('Level ');
-  const finalLabel = cachedLabel('Score ');
-  const bestLabel = cachedLabel('Best ');
-
-  function resize() {
-    const ratio = window.devicePixelRatio || 1;
-    const width = Math.round(window.innerWidth * ratio);
-    const height = Math.round(window.innerHeight * ratio);
-    canvas.width = width;
-    canvas.height = height;
-    view.scale = Math.min(width / FIELD.width, height / FIELD.height);
-    view.x = (width - FIELD.width * view.scale) / 2;
-    view.y = (height - FIELD.height * view.scale) / 2;
+export class Renderer {
+  constructor(canvas, ctx) {
+    this.canvas = canvas;
+    this.ctx = ctx;
+    this.camX = 0;
+    this.camY = 0;
+    this.zoom = 1;
+    this.shakeX = 0;
+    this.shakeY = 0;
   }
 
-  const fonts = new Map();
-  function text(value, x, y, size, color, align) {
-    if (!fonts.has(size)) fonts.set(size, `${size}px ${FONT}`);
-    context.font = fonts.get(size);
-    context.fillStyle = color;
-    context.textAlign = align;
-    context.fillText(value, x, y);
+  resize() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.canvas.width = this.canvas.clientWidth * dpr;
+    this.canvas.height = this.canvas.clientHeight * dpr;
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  function drawField(state) {
-    context.fillStyle = PALETTE.sky;
-    context.fillRect(0, 0, FIELD.width, FIELD.height);
-    context.fillStyle = PALETTE.ground;
-    context.fillRect(0, FIELD.groundY, FIELD.width, FIELD.height - FIELD.groundY);
+  // Follow the player (or target), centre the world.
+  follow(tx, ty) {
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    this.camX = tx - w / 2;
+    this.camY = ty - h / 2;
+  }
 
-    const items = state.items;
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      if (!item.active) continue;
-      if (item.kind === KIND_COIN) {
-        context.fillStyle = PALETTE.coin;
-        context.beginPath();
-        context.arc(item.x + item.width / 2, item.y + item.height / 2, item.width / 2, 0, Math.PI * 2);
-        context.fill();
-      } else {
-        context.fillStyle = PALETTE.block;
-        context.fillRect(item.x, item.y, item.width, item.height);
-      }
+  addShake(amount) {
+    this.shakeX = (Math.random() * 2 - 1) * amount;
+    this.shakeY = (Math.random() * 2 - 1) * amount;
+  }
+
+  // Convert world coords to screen coords.
+  sx(x) {
+    return x - this.camX + this.shakeX;
+  }
+  sy(y) {
+    return y - this.camY + this.shakeY;
+  }
+
+  // Daylight factor 0 (night)..1 (noon).
+  daylight(timeOfDay, dayCycle) {
+    const t = timeOfDay / dayCycle;
+    return Math.max(0.28, Math.min(1, Math.abs(Math.sin(t * Math.PI))));
+  }
+
+  draw(world, dt) {
+    const ctx = this.ctx;
+    const day = this.daylight(world.timeOfDay, world.day);
+    // Sky / backdrop
+    ctx.fillStyle = day > 0.6 ? '#bcd8e8' : '#0a0f22';
+    ctx.fillRect(0, 0, this.canvas.clientWidth, this.canvas.clientHeight);
+
+    this.drawCity(world, day);
+    this.drawParticles(world);
+    this.drawPeds(world, day);
+    this.drawCars(world, day);
+    this.drawCops(world, day);
+    this.drawPlayer(world, day);
+    this.drawShake(day);
+  }
+
+  drawCity(world, day) {
+    const ctx = this.ctx;
+    const city = world.city;
+    // Sea (east)
+    ctx.fillStyle = day > 0.6 ? '#1f6ea8' : '#0d2f4f';
+    const seaL = this.sx(city.seaLeft);
+    const seaT = this.sy(0);
+    const seaW = this.sx(WORLD_W * TILE) - seaL;
+    const seaH = this.sy(WORLD_H * TILE) - seaT;
+    ctx.fillRect(seaL, seaT, seaW, seaH);
+    // Beach
+    ctx.fillStyle = '#e6d9a8';
+    ctx.fillRect(this.sx((WORLD_W - BEACH_W) * TILE), seaT, this.sx(WORLD_W * TILE - 0) - this.sx((WORLD_W - BEACH_W) * TILE), seaH);
+    // Park
+    if (city.park) {
+      ctx.fillStyle = day > 0.6 ? '#3f9c52' : '#1f5530';
+      ctx.fillRect(this.sx(city.park.x), this.sy(city.park.y), city.park.w, city.park.h);
     }
-
-    const player = state.player;
-    // Blink while invulnerable after a hit: hidden on every other tenth of a second.
-    if (player.invulnerable === 0 || Math.floor(player.invulnerable * 10) % 2 === 1) {
-      context.fillStyle = PALETTE.player;
-      context.fillRect(player.x, player.y, player.width, player.height);
+    // Roads (draw as a darker layer with lane lines)
+    ctx.fillStyle = '#2b2f3a';
+    for (const r of city.roads) {
+      if (r.axis === 'v') ctx.fillRect(this.sx(r.t * TILE), this.sy(0), this.sx((r.t + 2) * TILE) - this.sx(r.t * TILE), this.sy(WORLD_H * TILE) - this.sy(0));
+      else ctx.fillRect(this.sx(0), this.sy(r.t * TILE), this.sx(WORLD_W * TILE) - this.sx(0), this.sy((r.t + 2) * TILE) - this.sy(r.t * TILE));
+    }
+    // Buildings
+    for (const b of city.buildings) {
+      ctx.fillStyle = b.color;
+      ctx.fillRect(this.sx(b.x), this.sy(b.y), b.w, b.h);
+      // a simple window grid
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(this.sx(b.x), this.sy(b.y), b.w, b.h);
     }
   }
 
-  function drawHud(state) {
-    context.textBaseline = 'top';
-    text(scoreLabel(state.score), 24, 20, 28, PALETTE.text, 'left');
-    text(levelLabel(state.level), FIELD.width / 2, 20, 28, PALETTE.text, 'center');
-    const firstLife = FIELD.width - 24 - LIVES * (LIFE_SIZE + LIFE_GAP) + LIFE_GAP;
-    text('Lives', firstLife - 12, 20, 28, PALETTE.text, 'right');
-    for (let life = 0; life < LIVES; life += 1) {
-      context.fillStyle = life < state.lives ? PALETTE.player : PALETTE.ground;
-      context.fillRect(firstLife + life * (LIFE_SIZE + LIFE_GAP), 24, LIFE_SIZE, LIFE_SIZE);
+  drawParticles(world) {
+    const ctx = this.ctx;
+    for (const pt of world.particles) {
+      const a = Math.max(0, pt.life / pt.max) * 0.6;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = pt.type === 'dust' ? '#c8b89a' : '#ffd75e';
+      ctx.beginPath();
+      ctx.arc(this.sx(pt.x), this.sy(pt.y), 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  drawPeds(world, day) {
+    const ctx = this.ctx;
+    for (const pd of world.peds) {
+      ctx.save();
+      ctx.translate(this.sx(pd.x), this.sy(pd.y));
+      ctx.rotate(pd.heading);
+      ctx.fillStyle = day > 0.6 ? '#d98a4a' : '#5a6a8a';
+      ctx.fillRect(-4, -3, 8, 6);
+      ctx.fillStyle = '#f0e2cc';
+      ctx.beginPath();
+      ctx.arc(4, 0, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
   }
 
-  function drawPanel(title, lines, prompt) {
-    const height = PANEL.top + lines.length * PANEL.line + PANEL.bottom;
-    const x = (FIELD.width - PANEL.width) / 2;
-    const y = (FIELD.height - height) / 2;
-    context.fillStyle = PALETTE.panel;
-    context.fillRect(x, y, PANEL.width, height);
-    context.textBaseline = 'alphabetic';
-    text(title, FIELD.width / 2, y + 78, 48, PALETTE.text, 'center');
-    for (let index = 0; index < lines.length; index += 1) {
-      text(lines[index], FIELD.width / 2, y + PANEL.top + index * PANEL.line, 22, PALETTE.muted, 'center');
+  drawCars(world, day) {
+    const ctx = this.ctx;
+    for (const c of world.vehicles) {
+      if (c.driven) continue; // drawn as the player
+      this.drawCar(ctx, c, day, c.isCop);
     }
-    text(prompt, FIELD.width / 2, y + height - 40, 24, PALETTE.coin, 'center');
   }
 
-  const TITLE_LINES = ['Dodge the red blocks. Catch the gold coins.', 'Move with ← → or A D.  Pause with P.', ''];
-  const PAUSED_LINES = ['The blocks will wait for you.'];
-  const OVER_LINES = ['', ''];
+  drawCar(ctx, c, day, isCop) {
+    ctx.save();
+    ctx.translate(this.sx(c.x), this.sy(c.y));
+    ctx.rotate(c.heading);
+    // body
+    ctx.fillStyle = isCop ? '#0b2a66' : c.color;
+    ctx.fillRect(-CAR_LENGTH / 2, -CAR_WIDTH / 2, CAR_LENGTH, CAR_WIDTH);
+    // windshield
+    ctx.fillStyle = 'rgba(150,200,255,0.5)';
+    ctx.fillRect(CAR_LENGTH / 2 - 10, -CAR_WIDTH / 2 + 3, 5, CAR_WIDTH - 6);
+    // headlights at night
+    if (day < 0.5) {
+      ctx.fillStyle = 'rgba(255,240,180,0.7)';
+      ctx.fillRect(CAR_LENGTH / 2, -CAR_WIDTH / 2 + 2, 3, 2);
+      ctx.fillRect(CAR_LENGTH / 2, CAR_WIDTH / 2 - 4, 3, 2);
+    }
+    // cop light bar
+    if (isCop) {
+      ctx.fillStyle = '#ff2020';
+      ctx.fillRect(-3, -CAR_WIDTH / 2 - 3, 2, 2);
+      ctx.fillStyle = '#2030ff';
+      ctx.fillRect(-3, CAR_WIDTH / 2 + 1, 2, 2);
+    }
+    ctx.restore();
+  }
 
-  /** Paint one frame: the field, then the HUD or a panel for the screen the game is on. */
-  function draw(state, screen, best) {
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.fillStyle = PALETTE.backdrop;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.setTransform(view.scale, 0, 0, view.scale, view.x, view.y);
-    drawField(state);
-    if (screen === SCREEN_TITLE) {
-      TITLE_LINES[2] = bestLabel(best);
-      drawPanel('Block Dodger', TITLE_LINES, 'Press Space or click to start');
+  drawCops(world, day) {
+    const ctx = this.ctx;
+    for (const c of world.cops) {
+      ctx.save();
+      ctx.translate(this.sx(c.x), this.sy(c.y));
+      ctx.rotate(c.heading);
+      ctx.fillStyle = '#16306b';
+      ctx.fillRect(-4, -3, 8, 6);
+      ctx.fillStyle = '#dfe6ff';
+      ctx.beginPath();
+      ctx.arc(4, 0, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  drawPlayer(world, day) {
+    const ctx = this.ctx;
+    const p = world.player;
+    if (p.inCar && p.car) {
+      this.drawCar(ctx, p.car, day, false);
+      // Player visible in car through tinted window
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(this.sx(p.car.x) - 4, this.sy(p.car.y) - 2, 8, 4);
       return;
     }
-    drawHud(state);
-    if (screen === SCREEN_PAUSED) drawPanel('Paused', PAUSED_LINES, 'Press P to resume');
-    else if (screen === SCREEN_OVER) {
-      OVER_LINES[0] = finalLabel(state.score);
-      OVER_LINES[1] = bestLabel(best);
-      drawPanel('Game over', OVER_LINES, 'Press Space or click to play again');
-    }
+    ctx.save();
+    ctx.translate(this.sx(p.x), this.sy(p.y));
+    ctx.rotate(p.heading);
+    // body
+    ctx.fillStyle = '#2c8cf0';
+    ctx.fillRect(-5, -4, 10, 8);
+    ctx.fillStyle = '#f0e2cc';
+    ctx.beginPath();
+    ctx.arc(6, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // aim line when not in car
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(6, 0);
+    ctx.lineTo(26, 0);
+    ctx.stroke();
+    ctx.restore();
   }
 
-  resize();
-  window.addEventListener('resize', resize);
-  return { draw };
+  drawShake(day) {
+    // keep shake alive briefly
+    this.shakeX *= 0.8;
+    this.shakeY *= 0.8;
+  }
 }
