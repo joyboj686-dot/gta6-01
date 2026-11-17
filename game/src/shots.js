@@ -7,7 +7,7 @@
 import { Rng } from './random.js';
 import { World } from './world.js';
 import { MissionLog, MISSION_LIST } from './missions.js';
-import { TILE } from './config.js';
+import { TILE, WORLD_W } from './config.js';
 
 // Parse ?shot= and ?seed= from the URL.
 export function shotQuery() {
@@ -48,11 +48,15 @@ export function stageWorld(shot, seed) {
     world.player.cash = 12000;
     world.player.hp = 60;
     world.player.armor = 30;
-    world.timeOfDay = 23 * 60; // near midnight
+    // Park the player on the beachfront at golden hour so the sea and sky glow.
+    world.player.x = (WORLD_W - 14) * TILE;
+    world.player.y = 10 * TILE;
+    world.player.heading = -Math.PI / 2;
+    world.timeOfDay = 18 * 60 + 40; // golden-hour sunset
     missions.show('All heists complete. LEONIDA NIGHTS', '#ffd75e');
   } else {
-    // start: title screen is drawn by main.js over a quiet city.
-    world.timeOfDay = 19 * 60;
+    // start: title screen is drawn by main.js over a sun-soaked midday city.
+    world.timeOfDay = 11 * 60;
   }
 
   return { world, missions };

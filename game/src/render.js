@@ -44,10 +44,11 @@ export class Renderer {
     return y - this.camY + this.shakeY;
   }
 
-  // Daylight factor 0 (night)..1 (noon).
+  // Daylight factor 0 (night)..1 (noon), peaking at midday (720 game-minutes).
   daylight(timeOfDay, dayCycle) {
-    const t = timeOfDay / dayCycle;
-    return Math.max(0.28, Math.min(1, Math.abs(Math.sin(t * Math.PI))));
+    const phase = timeOfDay / 1440; // 0..1 across a full day
+    const s = Math.sin(phase * Math.PI); // 0 at midnight, 1 at noon
+    return Math.max(0.22, Math.min(1, 0.22 + 0.78 * s));
   }
 
   draw(world, dt) {

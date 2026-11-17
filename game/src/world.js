@@ -86,9 +86,10 @@ export class World {
   }
 
   updateClock(dt) {
-    this.timeOfDay += dt * 6;
-    if (this.timeOfDay >= DAY_CYCLE * 60) {
-      this.timeOfDay -= DAY_CYCLE * 60;
+    // timeOfDay counts game-minutes in a 24-hour day; DAY_CYCLE real seconds = one day.
+    this.timeOfDay += dt * (1440 / DAY_CYCLE);
+    if (this.timeOfDay >= 1440) {
+      this.timeOfDay -= 1440;
       this.day++;
     }
   }

@@ -42,8 +42,8 @@ export class Vehicle {
 
   integrate(dt) {
     // Rear-axle point turns; the body is drawn around the centre.
-    const rearX = this.x - Math.cos(this.heading) * CAR_LENGTH * 0.3;
-    const rearY = this.y - Math.sin(this.heading) * CAR_LENGTH * 0.3;
+    let rearX = this.x - Math.cos(this.heading) * CAR_LENGTH * 0.3;
+    let rearY = this.y - Math.sin(this.heading) * CAR_LENGTH * 0.3;
     rearX += Math.cos(this.heading) * this.speed * dt;
     rearY += Math.sin(this.heading) * this.speed * dt;
     this.x = rearX + Math.cos(this.heading) * CAR_LENGTH * 0.3;

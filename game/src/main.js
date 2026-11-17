@@ -73,7 +73,7 @@ if (shot.shot === 'play' || shot.shot === 'end') {
   mode = shot.shot;
 } else if (shot.shot === 'start') {
   buildShotWorld();
-  mode = 'shot';
+  mode = 'start';
 } else {
   newGame();
   mode = 'title';
@@ -332,7 +332,7 @@ function drawTitleOverlay() {
 }
 
 function drawEndOverlay() {
-  ctx.fillStyle = 'rgba(8,10,18,0.62)';
+  ctx.fillStyle = 'rgba(8,10,18,0.45)';
   ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   ctx.fillStyle = '#ffd75e';
   ctx.font = 'bold 40px system-ui';

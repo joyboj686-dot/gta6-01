@@ -67,9 +67,11 @@ export class City {
     let x = ox + m;
     while (x < ox + w - m) {
       let y = oy + m;
+      let bw = 0;
+      let bh = 0;
       while (y < oy + h - m) {
-        const bw = Math.min(w - (x - ox) - m, rng.range(20, 48));
-        const bh = Math.min(h - (y - oy) - m, rng.range(20, 48));
+        bw = Math.min(w - (x - ox) - m, rng.range(20, 48));
+        bh = Math.min(h - (y - oy) - m, rng.range(20, 48));
         if (bw > 8 && bh > 8) {
           this.buildings.push({ x, y, w: bw, h: bh, color: this.pickColor(kind, rng) });
         }
