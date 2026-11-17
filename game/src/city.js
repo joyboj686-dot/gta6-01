@@ -45,7 +45,7 @@ export class City {
         dy >= this.downtown.y && dy < this.downtown.y + this.downtown.h;
       if (inCore) {
         this.buildBlock(c, 'downtown');
-      } else if (!parkChosen && c.x >= WORLD_W - BEACH_W - 6 && c.y >= (WORLD_H / 2) - 2 && c.y < (WORLD_H / 2) + 8) {
+      } else if (!parkChosen && c.x >= WORLD_W - 2 * SPACING && c.y >= WORLD_H / 4 && c.y <= WORLD_H * 2 / 3) {
         this.park = { x: c.x * TILE, y: c.y * TILE, w: c.w * TILE, h: c.h * TILE };
         parkChosen = true;
       } else {
